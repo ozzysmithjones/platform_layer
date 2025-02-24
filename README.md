@@ -38,3 +38,9 @@ int main(void) {
     return 0;
 }
 ```
+Some functions can fail and will return an error code. Error codes can be either `SUCCESS` or `FAILURE`. In addition to returning the error code, in debug mode functions will also log an error message to standard error when an error occurs. This behaviour can be overriden by defining the LOG_ERROR macro before implementing the library. 
+```C
+#define LOG_ERROR(message) printf("this is a nice error message: %s", message)
+#define PLATFORM_IMPLEMENTATION
+#include "platform_layer.h"
+```
