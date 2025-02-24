@@ -1,5 +1,5 @@
 # platform_layer
-This is a header-only C library that abstracts over the native Windows API. Other platforms might be supported in the future. This allows native access to keyboard, windowing, multi-threading, file mapping, dynamic library loading and memory management for desktop applications. 
+This is a header-only C library that wraps the native Windows API. Other platforms might be supported in the future. This allows native access to keyboard, windowing, multi-threading, file mapping, dynamic library loading and memory management for desktop applications. 
 
 **Warning**
 This library is still in its early stages
