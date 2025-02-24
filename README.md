@@ -4,7 +4,7 @@ This is a header-only library that abstracts over the native Windows API. Other 
 # how to use
 Copy the platform_layer.h file into your C/C++ project. In one of the .c/.cpp files within your project, type the following:
 
-'''C
+'''C++
 #define PLATFORM_IMPLEMENTATION
 #include "platform_layer.h"
 '''
