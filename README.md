@@ -1,6 +1,9 @@
 # platform_layer
 This is a header-only C library that abstracts over the native Windows API. Other platforms might be supported in the future. This allows native access to keyboard, windowing, multi-threading, file mapping, dynamic library loading and memory management for desktop applications. 
 
+***Warning**
+This library is still in its early stages
+
 # integrating the library
 Copy the platform_layer.h file into your C/C++ project. In one of the .c/.cpp files within your project, type the following to implement the library:
 
