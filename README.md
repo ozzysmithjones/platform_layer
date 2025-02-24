@@ -12,7 +12,7 @@ Copy the platform_layer.h file into your C/C++ project. In one of the .c/.cpp fi
 #include "platform_layer.h"
 ```
 
-The #define PLATFORM_IMPLEMENTATION is a macro that should only be defined in exactly one .c/.cpp file. This macro is used so that the library functions can be only implemented one time (if there's multiple implementations of a function this can lead to errors in C/C++). After doing this in one file, you are free to use #include platform.h in other files, provided there is one implementation. 
+The #define PLATFORM_IMPLEMENTATION is a macro that should only be defined in exactly one .c/.cpp file. This macro is used so that the library functions can be implemented one time (if there's multiple implementations of a function this can lead to linker errors in C/C++). After doing this in one file, you are free to #include platform.h in other files, provided there is one implementation. 
 
 # usage details
 Every function that begins with 'create' should be proceeded with a following call to 'destroy' to cleanup system resources (similar to malloc/free). For example, `create_window()` should be followed by `destroy_window()` later on in the program. Here is an example of how to create/destroy a window: 
