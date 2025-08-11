@@ -1,10 +1,12 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 #include <stdint.h>
+#include <stddef.h>
 #ifndef CPLUSPLUS
 #include <stdbool.h>
 #endif
 #include <assert.h>
+
 
 // Supported platforms:
 #ifdef _WIN32
@@ -13,6 +15,7 @@
 #define NO_MINMAX
 #include <windows.h>
 #include <windowsx.h>
+#include <d3d11.h>
 #endif
 
 typedef struct file_mapping file_mapping;
@@ -22,11 +25,20 @@ typedef struct window window;
 typedef struct mutex mutex;
 typedef struct thread thread;
 typedef struct user_input user_input;
+typedef struct string string;
+typedef struct key_input key_input;
+typedef struct mouse_input mouse_input;
+typedef struct renderer renderer;
+typedef struct model model;
+typedef struct texture texture;
+typedef struct model_data model_data;
+typedef struct texture_data texture_data;
 
 // can redefine this macro to change the logging behavior
 #ifndef LOG_ERROR(message)
 #ifndef NDEBUG
 #include <stdio.h>
+#include "platform.h"
 #define LOG_ERROR(message) fprintf(stderr, "error: %s\n", message)
 #else
 #define LOG_ERROR(message)
@@ -37,6 +49,31 @@ typedef enum result {
     FAILURE,
     SUCCESS,
 } result;
+
+typedef enum window_mode {
+    WINDOW_MODE_WINDOWED,
+    WINDOW_MODE_BORDERLESS,
+    WINDOW_MODE_FULLSCREEN,
+} window_mode;
+
+typedef enum texture_format {
+    TEXTURE_FORMAT_R8G8B8A8,
+    TEXTURE_FORMAT_R8G8B8,
+    TEXTURE_FORMAT_R8,
+    TEXTURE_FORMAT_R16,
+    TEXTURE_FORMAT_R16G16,
+    TEXTURE_FORMAT_R16G16B16A16,
+    TEXTURE_FORMAT_R32,
+    TEXTURE_FORMAT_R32G32,
+    TEXTURE_FORMAT_R32G32B32A32,
+    TEXTURE_FORMAT_DXT1,
+    TEXTURE_FORMAT_DXT3,
+    TEXTURE_FORMAT_DXT5,
+    TEXTURE_FORMAT_BC4,
+    TEXTURE_FORMAT_BC5,
+    TEXTURE_FORMAT_BC6,
+    TEXTURE_FORMAT_BC7,
+} texture_format;
 
 typedef enum keyboard_key {
     KEY_NONE,
@@ -155,11 +192,6 @@ typedef enum keyboard_key {
     KEY_RIGHT_ALT = 165,
 } keyboard_key;
 
-typedef enum window_mode {
-    WINDOW_MODE_WINDOWED,
-    WINDOW_MODE_BORDERLESS,
-    WINDOW_MODE_FULLSCREEN,
-} window_mode;
 
 typedef struct key_input {
     bool up: 1;
@@ -190,8 +222,8 @@ typedef struct string {
 } string;
 
 // File mapping for platform independent code
-result map_file(file_mapping* mapping, const char* path);
-void unmap_file(file_mapping* mapping);
+result create_file_mapping(file_mapping* mapping, const char* path);
+void destroy_file_mapping(file_mapping* mapping);
 
 // Dynamic library loading for platform independent code
 result load_dynamic_library(dynamic_library* library, const char* path);
@@ -220,10 +252,21 @@ void destroy_mutex(mutex* mutex);
 result create_thread(thread* thread, unsigned long (*function)(void*), void* data);
 void destroy_thread(thread* thread);
 
+result create_renderer(renderer* renderer, window* window);
+result present_renderer(renderer* renderer);
+result create_texture(texture* texture, texture_data* data, renderer* renderer);
+result create_model(model* model, texture_data* data, renderer* renderer);
+void destroy_texture(renderer* renderer, texture* texture);
+void destroy_model(renderer* renderer, model* model);
+void draw_model(renderer* renderer, model* model, texture* texture);
+
+void clear_renderer(renderer* renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+void destroy_renderer(renderer* renderer);
+
 // Windows platform code
 #ifdef _WIN32
 
-struct file_mapping {
+typedef struct file_mapping {
     struct {
         HANDLE file;
         HANDLE mapping;
@@ -231,42 +274,84 @@ struct file_mapping {
         LARGE_INTEGER file_size;
     } platform_dependent;
     string text;
-};
+} file_mapping;
 
-struct dynamic_library {
+typedef struct dynamic_library {
     struct {
         HMODULE handle;
     } platform_dependent;
-};
+} dynamic_library;
 
-struct arena_allocator {
+typedef struct arena_allocator {
     uintptr_t memory;
     uintptr_t memory_end;
     uintptr_t bump_pointer;
     uintptr_t next_page;
     size_t page_size;
-};
+} arena_allocator;
 
-struct window {
+typedef struct window {
     struct {
         HWND handle;
         HINSTANCE instance;
     } platform_dependent;
     user_input input;
     window_mode mode;
-};
+    int width;
+    int height;
+} window;
 
-struct mutex {
+typedef struct mutex {
     struct {
         CRITICAL_SECTION critical_section;
     } platform_dependent;
-};
+} mutex;
 
-struct thread {
+typedef struct thread {
     struct {
         HANDLE handle;
     } platform_dependent;
-};
+} thread;
+
+typedef struct texture_data {
+    void* pixels;
+    size_t width;
+    size_t height;
+    texture_format format;
+} texture_data;
+
+typedef struct texture {
+    struct {
+        ID3D11ShaderResourceView* shader_resource_view;
+        ID3D11Texture2D* texture;
+    } platform_dependent;
+} texture;
+
+typedef struct model_data {
+    void* vertices;
+    size_t vertex_count;
+    void* indices;
+    size_t index_count;
+} model_data;
+
+typedef struct model {
+    struct {
+        ID3D11Buffer* vertex_buffer;
+        ID3D11Buffer* index_buffer;
+        size_t index_count;
+    } platform_dependent;
+} model;
+
+typedef struct renderer {
+    struct {
+        HWND handle;
+        HINSTANCE instance;
+        ID3D11Device* device;
+        ID3D11DeviceContext* device_context;
+        IDXGISwapChain* swap_chain;
+        ID3D11RenderTargetView* render_target_view;
+    } platform_dependent;
+} renderer;
 
 #endif // _WIN32
 #endif // PLATFORM_H
@@ -274,7 +359,7 @@ struct thread {
 #ifdef PLATFORM_IMPLEMENTATION
 
 // File mapping for platform independent code
-result map_file(file_mapping* mapping, const char* path) {
+result create_file_mapping(file_mapping* mapping, const char* path) {
     mapping->platform_dependent.file = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (mapping->platform_dependent.file == INVALID_HANDLE_VALUE) {
         LOG_ERROR("Failed to open file");
@@ -296,7 +381,7 @@ result map_file(file_mapping* mapping, const char* path) {
     return SUCCESS;
 }
 
-void unmap_file(file_mapping* mapping) {
+void destroy_file_mapping(file_mapping* mapping) {
     UnmapViewOfFile(mapping->platform_dependent.base_pointer);
     CloseHandle(mapping->platform_dependent.mapping);
     CloseHandle(mapping->platform_dependent.file);
@@ -332,7 +417,20 @@ result create_arena_allocator(arena_allocator* arena, size_t size) {
     }
     arena->memory = (uintptr_t)VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_NOACCESS);
     if (arena->memory == 0) {
-        LOG_ERROR("Failed to reserve memory");
+        switch(GetLastError()) {
+            case ERROR_NOT_ENOUGH_MEMORY:
+                LOG_ERROR("Not enough memory to reserve");
+                break;
+            case ERROR_INVALID_PARAMETER:
+                LOG_ERROR("Invalid parameter passed to create_arena_allocator");
+                break;
+            case ERROR_COMMITMENT_LIMIT:
+                LOG_ERROR("Commitment limit reached");
+                break;
+            default:
+                LOG_ERROR("Failed to reserve memory");
+                break;
+        }
         return FAILURE;
     }
     arena->memory_end = arena->memory + size;
@@ -478,6 +576,8 @@ result create_window(window* window, const char* title, int width, int height, w
     }
     window->mode = mode;
     window->platform_dependent.instance = GetModuleHandle(NULL);
+    window->width = width;
+    window->height = height;
     WNDCLASSA wc = {0};
     wc.lpfnWndProc = window_proc;
     wc.hInstance = window->platform_dependent.instance;
@@ -509,26 +609,35 @@ void set_window_mode(window* window, window_mode mode) {
             // Remove window borders and title bar
             SetWindowLong(window->platform_dependent.handle, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
 
-            // Resize the window to cover the entire screen
+            // Resize the window
             SetWindowPos(window->platform_dependent.handle, HWND_TOP, 0, 0, 800, 600, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+            window->width = 800;
+            window->height = 600;
         } break;
         case WINDOW_MODE_BORDERLESS: {
             // Remove window borders and title bar
             SetWindowLong(window->platform_dependent.handle, GWL_STYLE, WS_POPUP | WS_VISIBLE);
 
-            // Resize the window to cover the entire screen
+            // Resize the window
             SetWindowPos(window->platform_dependent.handle, HWND_TOP, 0, 0, 800, 600, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+            window->width = 800;
+            window->height = 600;
         } break;
         case WINDOW_MODE_FULLSCREEN: {
             // Get the screen width and height
-            int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-            int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+            int screen_width = GetSystemMetrics(SM_CXSCREEN);
+            int screen_height = GetSystemMetrics(SM_CYSCREEN);
 
             // Remove window borders and title bar
             SetWindowLong(window->platform_dependent.handle, GWL_STYLE, WS_POPUP | WS_VISIBLE);
 
             // Resize the window to cover the entire screen
-            SetWindowPos(window->platform_dependent.handle, HWND_TOP, 0, 0, screenWidth, screenHeight, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+            SetWindowPos(window->platform_dependent.handle, HWND_TOP, 0, 0, screen_width, screen_height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+            window->width = screen_width;
+            window->height = screen_height;
         } break;
     }
 }
@@ -582,6 +691,92 @@ result create_thread(thread* thread, unsigned long (*function)(void*), void* dat
 void destroy_thread(thread* thread) {
     WaitForSingleObject(thread->platform_dependent.handle, INFINITE);
     CloseHandle(thread->platform_dependent.handle);
+}
+
+result create_renderer(renderer* renderer, window* window) {
+    renderer->platform_dependent.instance = window->platform_dependent.instance;
+    renderer->platform_dependent.handle = window->platform_dependent.handle;
+    DXGI_SWAP_CHAIN_DESC swap_chain_desc = {0};
+    swap_chain_desc.BufferCount = 1;
+    swap_chain_desc.BufferDesc.Width = window->width;
+    swap_chain_desc.BufferDesc.Height = window->height;
+    swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swap_chain_desc.BufferDesc.RefreshRate.Numerator = 60;
+    swap_chain_desc.BufferDesc.RefreshRate.Denominator = 1;
+    swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swap_chain_desc.OutputWindow = window->platform_dependent.handle;
+    swap_chain_desc.SampleDesc.Count = 1;
+    swap_chain_desc.SampleDesc.Quality = 0;
+    swap_chain_desc.Windowed = window->mode == WINDOW_MODE_WINDOWED;
+    swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    swap_chain_desc.Flags = 0;
+    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
+    if (D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, &feature_level, 1, D3D11_SDK_VERSION, &swap_chain_desc, &renderer->platform_dependent.swap_chain, &renderer->platform_dependent.device, NULL, &renderer->platform_dependent.device_context) != S_OK) {
+        LOG_ERROR("Failed to create device and swap chain");
+        return FAILURE;
+    }
+    ID3D11Texture2D* back_buffer;
+    if (FAILED(renderer->platform_dependent.swap_chain->lpVtbl->GetBuffer(renderer->platform_dependent.swap_chain, 0, &IID_ID3D11Texture2D, (void**)&back_buffer))) {
+        LOG_ERROR("Failed to get back buffer");
+        return FAILURE;
+    }
+
+    if (FAILED(renderer->platform_dependent.device->lpVtbl->CreateRenderTargetView(renderer->platform_dependent.device, (ID3D11Resource*)back_buffer, NULL, &renderer->platform_dependent.render_target_view))) {
+        LOG_ERROR("Failed to create render target view");
+        return FAILURE;
+    }
+
+    back_buffer->lpVtbl->Release(back_buffer);
+    return SUCCESS;
+}
+
+inline result present_renderer(renderer* renderer)
+{
+    if (FAILED(renderer->platform_dependent.swap_chain->lpVtbl->Present(renderer->platform_dependent.swap_chain, 0, 0))) {
+        LOG_ERROR("Failed to present swap chain");
+        return FAILURE;
+    }
+    return SUCCESS;
+}
+
+static const char* skip_whitespace_and_comments(const char* it, const char* end) {
+    for (; it < end; ++it) {
+        if (*it == '#') {
+            while (*it != '\n') {
+                ++it;
+            }
+            ++it;
+            continue;
+        }
+        if (!isspace(*it)) {
+            break;
+        }
+    }
+    return it;
+}
+
+
+inline result create_texture(renderer *renderer, texture *texture, const char *path)
+{
+    return SUCCESS;
+}
+
+inline void draw_model(renderer* renderer, model* model, texture* texture)
+{
+    UINT stride = sizeof(float) * 5;
+    UINT offset = 0;
+    ID3D11DeviceContext* context = renderer->platform_dependent.device_context;
+    ID3D11DeviceContextVtbl* vtable = context->lpVtbl;
+    vtable->IASetVertexBuffers(context, 0, 1, &model->platform_dependent.vertex_buffer, &stride, &offset);
+    vtable->IASetIndexBuffer(context, model->platform_dependent.index_buffer, DXGI_FORMAT_R32_UINT, 0);
+    vtable->IASetPrimitiveTopology(context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    vtable->DrawIndexed(context, model->platform_dependent.index_count, 0, 0);
+}
+
+inline void clear_renderer(renderer *renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+    float color[4] = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+    renderer->platform_dependent.device_context->lpVtbl->ClearRenderTargetView(renderer->platform_dependent.device_context, renderer->platform_dependent.render_target_view, color);
 }
 
 #endif // PLATFORM_IMPLEMENTATION
